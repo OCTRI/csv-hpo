@@ -1,0 +1,16 @@
+# Keys without a value are passed into the config via a .env file in the same
+# directory as the `docker-compose` command was run from
+version: "2"
+services:
+  mysql:
+    image: mysql:5.7
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./docker_data/mysql:/var/lib/mysql
+    environment:
+      - MYSQL_DATABASE=ehrdata
+      - MYSQL_USER=ehrdata
+      - MYSQL_PASSWORD=ehrdata
+      - MYSQL_ROOT_PASSWORD=root
+    restart: always

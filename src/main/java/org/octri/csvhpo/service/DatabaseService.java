@@ -2,10 +2,13 @@ package org.octri.csvhpo.service;
 
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.util.List;
 
 import org.octri.csvhpo.domain.Admission;
 import org.octri.csvhpo.domain.DiagnosisICD;
+import org.octri.csvhpo.domain.LabEvent;
+import org.octri.csvhpo.domain.LabItem;
 import org.octri.csvhpo.domain.Patient;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -131,6 +134,8 @@ public class DatabaseService {
 				"   VALUENUM FLOAT,\n" + 
 				"   VALUEUOM VARCHAR(255),\n" + 
 				"   FLAG VARCHAR(255),\n" + 
+				"   REF_LOW VARCHAR(255),\n" + 
+				"   REF_HIGH VARCHAR(255),\n" + 
 				"  UNIQUE KEY LABEVENTS_ROW_ID (ROW_ID)	\n" + 
 				"  )\n" + 
 				"  CHARACTER SET = UTF8;\n";
@@ -235,6 +240,79 @@ public class DatabaseService {
 					@Override
 					public int getBatchSize() {
 						return diagnoses.size();
+					}
+				});
+			}
+		});
+	}
+
+	public void insertLabItems(List<LabItem> labItems) {		
+		String sql = "INSERT INTO " + TABLE_D_LABITEMS + " (ROW_ID, ITEMID, LABEL, FLUID, CATEGORY, LOINC_CODE)\n" + 
+				"VALUES (?, ?, ?, 'N/A', 'N/A', ?)";
+
+		TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+		transactionTemplate.execute(new TransactionCallbackWithoutResult() {
+
+			@Override
+			protected void doInTransactionWithoutResult(TransactionStatus status) {
+				jdbcTemplate.batchUpdate(sql, new BatchPreparedStatementSetter() {
+
+					@Override
+					public void setValues(PreparedStatement ps, int i) throws SQLException {
+						LabItem labItem = labItems.get(i);
+						ps.setInt(1, labItem.getRowId());
+						ps.setInt(2, labItem.getItemId());
+						ps.setString(3, labItem.getLabel());
+						ps.setString(4, labItem.getLoincCode());
+					}
+
+					@Override
+					public int getBatchSize() {
+						return labItems.size();
+					}
+				});
+			}
+		});
+	}
+
+	public void insertLabEvents(List<LabEvent> labEvents) {		
+		String sql = "INSERT INTO " + TABLE_LABEVENTS + " (ROW_ID, SUBJECT_ID, HADM_ID, ITEMID, CHARTTIME, VALUE, VALUENUM, VALUEUOM, FLAG, REF_LOW, REF_HIGH)\n" + 
+				"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+		TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+		transactionTemplate.execute(new TransactionCallbackWithoutResult() {
+
+			@Override
+			protected void doInTransactionWithoutResult(TransactionStatus status) {
+				jdbcTemplate.batchUpdate(sql, new BatchPreparedStatementSetter() {
+
+					@Override
+					public void setValues(PreparedStatement ps, int i) throws SQLException {
+						LabEvent labEvent = labEvents.get(i);
+						ps.setInt(1, labEvent.getRowId());
+						ps.setInt(2, labEvent.getSubjectId());
+						if (labEvent.getHadmId() != null) {
+							ps.setInt(3, labEvent.getHadmId());
+						} else {
+							ps.setNull(3, Types.INTEGER);
+						}
+						ps.setInt(4, labEvent.getItemId());
+						ps.setTimestamp(5, labEvent.getChartTime());
+						ps.setString(6, labEvent.getValue());
+						if (labEvent.getValueNum() != null) {
+							ps.setDouble(7, labEvent.getValueNum());
+						} else {
+							ps.setNull(7, Types.DOUBLE);
+						}
+						ps.setString(8, labEvent.getValueUom());
+						ps.setString(9, labEvent.getFlag());
+						ps.setString(10, labEvent.getRefLow());
+						ps.setString(11, labEvent.getRefHigh());
+					}
+
+					@Override
+					public int getBatchSize() {
+						return labEvents.size();
 					}
 				});
 			}

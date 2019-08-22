@@ -93,6 +93,7 @@ public class DatabaseService {
 				"   HADM_ID INTEGER NOT NULL,\n" + 
 				"   SEQ_NUM TINYINT UNSIGNED,\n" + 
 				"   ICD9_CODE VARCHAR(255),	\n" + 
+				"   ICD10_CODE VARCHAR(255), \n" + 
 				"  UNIQUE KEY DIAGNOSES_ICD_ROW_ID (ROW_ID)	\n" + 
 				"  )\n" + 
 				"  CHARACTER SET = UTF8;\n";
@@ -100,8 +101,7 @@ public class DatabaseService {
 		jdbcTemplate.execute(createDiagnosesIcd);
 		
 		String indexDiagnosesIcd = "alter table " + TABLE_DIAGNOSES_ICD + "\n" + 
-				"      add index DIAGNOSES_ICD_idx01 (SUBJECT_ID, HADM_ID),\n" + 
-				"      add index DIAGNOSES_ICD_idx02 (ICD9_CODE, SEQ_NUM);";
+				"      add index DIAGNOSES_ICD_idx01 (SUBJECT_ID, HADM_ID);";
 
 		//jdbcTemplate.execute(indexDiagnosesIcd);
 
@@ -218,8 +218,8 @@ public class DatabaseService {
 	}
 
 	public void insertDiagnosesICD(List<DiagnosisICD> diagnoses) {		
-		String sql = "INSERT INTO " + TABLE_DIAGNOSES_ICD + " (ROW_ID, SUBJECT_ID, HADM_ID, SEQ_NUM, ICD9_CODE)\n" + 
-				"VALUES (?, ?, ?, 0, ?)";
+		String sql = "INSERT INTO " + TABLE_DIAGNOSES_ICD + " (ROW_ID, SUBJECT_ID, HADM_ID, SEQ_NUM, ICD9_CODE, ICD10_CODE)\n" + 
+				"VALUES (?, ?, ?, 0, ?, ?)";
 
 		TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
 		transactionTemplate.execute(new TransactionCallbackWithoutResult() {
@@ -235,6 +235,7 @@ public class DatabaseService {
 						ps.setInt(2, diagnosis.getSubjectId());
 						ps.setInt(3, diagnosis.getHadmId());
 						ps.setString(4, diagnosis.getIcd9Code());
+						ps.setString(5, diagnosis.getIcd10Code());
 					}
 
 					@Override
@@ -248,7 +249,7 @@ public class DatabaseService {
 
 	public void insertLabItems(List<LabItem> labItems) {		
 		String sql = "INSERT INTO " + TABLE_D_LABITEMS + " (ROW_ID, ITEMID, LABEL, FLUID, CATEGORY, LOINC_CODE)\n" + 
-				"VALUES (?, ?, ?, 'N/A', 'N/A', ?)";
+				"VALUES (?, ?, ?, 'N/A', ?, ?)";
 
 		TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
 		transactionTemplate.execute(new TransactionCallbackWithoutResult() {
@@ -263,7 +264,8 @@ public class DatabaseService {
 						ps.setInt(1, labItem.getRowId());
 						ps.setInt(2, labItem.getItemId());
 						ps.setString(3, labItem.getLabel());
-						ps.setString(4, labItem.getLoincCode());
+						ps.setString(4, labItem.getCategory());
+						ps.setString(5, labItem.getLoincCode());
 					}
 
 					@Override

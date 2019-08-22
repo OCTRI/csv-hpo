@@ -7,6 +7,7 @@ public class DiagnosisICD {
 	private Integer hadmId;
 	private Integer seqNum;
 	private String icd9Code;
+	private String icd10Code;
 
 	public Integer getRowId() {
 		return rowId;
@@ -46,5 +47,13 @@ public class DiagnosisICD {
 
 	public void setIcd9Code(String icd9Code) {
 		this.icd9Code = icd9Code;
+	}
+
+	public String getIcd10Code() {
+		return icd10Code;
+	}
+
+	public void setIcd10Code(String icd10Code) {
+		this.icd10Code = icd10Code;
 	}
 }

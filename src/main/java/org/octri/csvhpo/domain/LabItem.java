@@ -63,4 +63,8 @@ public class LabItem {
 		this.loincCode = loincCode;
 	}
 
+	public static boolean loincsEqual(String loincCode1, String loincCode2) {
+		return (loincCode1 == null && loincCode2 == null) || (loincCode1 != null && loincCode1.equals(loincCode2));
+	}
+
 }

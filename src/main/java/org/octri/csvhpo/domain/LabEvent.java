@@ -21,6 +21,25 @@ public class LabEvent {
 	private String flag;
 	private String refLow;
 	private String refHigh;
+	
+	public LabEvent() {
+		
+	}
+
+	public LabEvent(Integer rowId, Integer subjectId, Integer hadmId, Integer itemId, Timestamp chartTime, String value,
+			Double valueNum, String valueUom, String flag, String refLow, String refHigh) {
+		this.rowId = rowId;
+		this.subjectId = subjectId;
+		this.hadmId = hadmId;
+		this.itemId = itemId;
+		this.chartTime = chartTime;
+		this.value = value;
+		this.valueNum = valueNum;
+		this.valueUom = valueUom;
+		this.flag = flag;
+		this.refLow = refLow;
+		this.refHigh = refHigh;
+	}
 
 	public Integer getRowId() {
 		return rowId;

@@ -3,7 +3,6 @@ package org.octri.csvhpo.service;
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
-import java.io.Reader;
 import java.sql.Timestamp;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -26,7 +25,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import com.opencsv.CSVParser;
+import com.opencsv.CSVParserBuilder;
 import com.opencsv.CSVReader;
+import com.opencsv.CSVReaderBuilder;
+import com.opencsv.exceptions.CsvMalformedLineException;
 
 @Service
 public class LoadDataService {
@@ -41,9 +44,9 @@ public class LoadDataService {
 	public void loadAll(String csvDirectory, boolean convertToMimic) throws IOException {
 		logger.info("Loading csv files into database.");
 		long startTime = System.currentTimeMillis();
-		// loadPatients(csvDirectory, convertToMimic);
-		// loadAdmissions(csvDirectory, convertToMimic);
-		// loadDiagnosesICD(csvDirectory, convertToMimic);
+		//loadPatients(csvDirectory, convertToMimic);
+		//loadAdmissions(csvDirectory, convertToMimic);
+		//loadDiagnosesICD(csvDirectory, convertToMimic);
 		loadLabEvents(csvDirectory, convertToMimic);
 		long endTime = System.currentTimeMillis();
 		logger.info("Data load complete in " + (endTime - startTime)*(1.0)/1000 + " seconds.");
@@ -141,9 +144,6 @@ public class LoadDataService {
 
 	public void loadDiagnosesICD(String path, boolean convertToMimic) throws IOException {
 		
-		// TODO: OHSU data has more ICD10 codes than ICD9. Add structure for this.
-		// TODO: There are several flags that may be useful. For example, some diagnoses are assigned with a followup flag, meaning they are not really final.
-
 		logger.info("Loading diagnoses");
 
 		List<DiagnosisICD> diagnoses = new ArrayList<>(batchSize);
@@ -159,6 +159,7 @@ public class LoadDataService {
 				diagnosis.setRowId(count);
 				diagnosis.setHadmId(Integer.parseInt(line[1]));
 				diagnosis.setIcd9Code(line[2]);
+				diagnosis.setIcd10Code(line[3]);
 			} else {
 				diagnosis.setRowId(Integer.parseInt(line[0]));
 				diagnosis.setSubjectId(Integer.parseInt(line[1]));
@@ -166,7 +167,12 @@ public class LoadDataService {
 				diagnosis.setIcd9Code(line[4]);
 			}
 
-			diagnoses.add(diagnosis);
+			// In the OHSU data set, look for the followup flag. Remove if Y
+			if (line.length == 16 && line[15].equals("Y")) {
+				// skip
+			} else {
+				diagnoses.add(diagnosis);
+			}
 
 			if (diagnoses.size() == batchSize) {
 				databaseService.insertDiagnosesICD(diagnoses);
@@ -201,72 +207,125 @@ public class LoadDataService {
 	 */
 	private void loadConvertedLabs(String path) throws IOException {
 		
-		Map<String,LabItem> labItemMap = new HashMap<>();
+		logger.info("Converting and loading labs");
+
+		Map<String,Map<String,LabItem>> labItemMap = new HashMap<>();
 		List<LabEvent> labEvents = new ArrayList<>(batchSize);
 
 		CSVReader csvReader = getReader(path + "/labevents.csv");
 		String[] line;
 		int count = 0;
 		int items = 0;
-		while ((line = csvReader.readNext()) != null) {
-			count++;
-			LabEvent labEvent = new LabEvent();
-			labEvent.setRowId(count);
-			labEvent.setSubjectId(Integer.parseInt(line[0]));
-			labEvent.setHadmId(StringUtils.isEmpty(line[1])?null:Integer.parseInt(line[1]));
-			
-			boolean loincColumnFound = false;
-			int i = 3; // First possible column it could be in 
-			while (!loincColumnFound && i < line.length) {
-				// The lab item may have commas in it, so we have to deal with that for now
-				if (StringUtils.isEmpty(line[i]) || line[i].matches("^(\\d)+-(\\d)+$")) {
-					loincColumnFound = true;
-				}
-				i++;
-			}
-			i--; // Set it back to the last one
-			String itemName = line[2];
-			for (int item=3; item < i; item++) {
-				itemName += "," + line[item];
-			}
-			
-			String loinc = line[i];
-			String unit = line[i+2];
-			
-			String key = itemName + "|" + unit;
-			LabItem labItem = labItemMap.get(key);
-			if (labItem != null) {
-				labEvent.setItemId(labItem.getItemId());
-			} else {
-				++items;
-				labEvent.setItemId(items);
-				labItem = new LabItem();
-				labItem.setRowId(items);
-				labItem.setItemId(items);
-				labItem.setLabel(itemName);
-				labItem.setLoincCode(loinc);
-				labItemMap.put(key, labItem);
-			}
-			
+		boolean more = true;
+		while (more) {
 			try {
-				Optional<Timestamp> chartTime = getTimestampForDateString(line[i+1]);
+				line = csvReader.readNext();
+				if (line == null) {
+					more = false;
+					continue;
+				}
+				count++;
+				LabEvent labEvent = new LabEvent();
+				labEvent.setRowId(count);
+				labEvent.setSubjectId(Integer.parseInt(line[0]));
+				labEvent.setHadmId(StringUtils.isEmpty(line[1])?null:Integer.parseInt(line[1]));
+				
+				// TODO: This is OHSU specific. The internal id for lab type sometimes has different LOINCs associated.
+				// When the LOINC is null but one is available elsewhere, we want to use it.
+				// Concatenate the internal id and name to be the key for this lab item
+				String labItemType = line[2] + "|" + line[11];
+				String loinc = StringUtils.defaultIfBlank(line[3], null);
+				if (labItemMap.containsKey(labItemType)) {
+					Map<String, LabItem> labItemsByLoinc = labItemMap.get(labItemType);
+					// If this has a LOINC, see if we've got a match
+					LabItem item = labItemsByLoinc.get(loinc);
+					if (loinc == null && item == null) {
+						// This lab has a null LOINC. Assign to a matching lab item with a LOINC
+						item = labItemsByLoinc.values().iterator().next();
+					} else if (loinc != null && item == null) {
+						item = labItemsByLoinc.get(null);
+						if (item != null) {
+							// This lab has a LOINC and a matching lab item has a null LOINC. Reassign the null to this LOINC.
+							labItemsByLoinc.remove(null);
+							item.setLoincCode(loinc);
+						} else {
+							// This lab has a LOINC that is different from the lab items already entered. Create a new lab item.
+							items++;
+							item = new LabItem();
+							item.setRowId(items);
+							item.setItemId(items);
+							item.setCategory(line[2]);
+							item.setLabel(line[11]);
+							item.setLoincCode(loinc);
+						}
+						labItemsByLoinc.put(item.getLoincCode(), item);
+					}					
+					labEvent.setItemId(item.getItemId());
+					
+				} else {
+					// This is the first instance of this lab. Create a new lab item.
+					items++;
+					LabItem labItem = new LabItem();
+					labItem.setRowId(items);
+					labItem.setItemId(items);
+					labItem.setCategory(line[2]);
+					labItem.setLabel(line[11]);
+					labItem.setLoincCode(loinc);
+					Map<String, LabItem> loincMap = new HashMap<>();
+					loincMap.put(loinc, labItem);
+					labItemMap.put(labItemType, loincMap);
+					labEvent.setItemId(items);
+				}
+				
+				String flag;
+				if (line[8] == null || line[8].equals("N")) {
+					flag = "ABNORMAL";
+				} else if (line[8].equals("Y")) {
+					flag = "NORMAL";
+				} else {
+					flag = "UNKNOWN";
+				}
+			
+				Optional<Timestamp> chartTime = getTimestampForDateString(line[4]);
 				labEvent.setChartTime(chartTime.get());
-				labEvent.setValue(line[i+3]);
-				labEvent.setValueNum(StringUtils.isEmpty(line[i+4])?null:Double.parseDouble(line[i+4]));
-				labEvent.setValueUom(unit);
-				labEvent.setFlag(line[i+5]);
-				labEvent.setRefLow(line[i+6]);
-				labEvent.setRefHigh(line[i+7]);
+				labEvent.setValue(line[6]);
+				labEvent.setValueNum(StringUtils.isEmpty(line[7])?null:Double.parseDouble(line[7]));
+				labEvent.setValueUom(line[5]);
+				labEvent.setFlag(flag);
+				labEvent.setRefLow(line[9]);
+				labEvent.setRefHigh(line[10]);
+
+				// TODO: Make this an option to override flags
+				if (StringUtils.isNoneEmpty(labEvent.getRefLow(), labEvent.getRefHigh(), line[7]) && labEvent.getFlag().equals("UNKNOWN")) {
+					// Set the flag based on the reference ranges
+					try {
+						Double low = Double.parseDouble(labEvent.getRefLow());
+						Double high = Double.parseDouble(labEvent.getRefHigh());
+						if (labEvent.getValueNum() < low || labEvent.getValueNum() > high) {
+							labEvent.setFlag("ABNORMAL");
+						} else {
+							labEvent.setFlag("NORMAL");
+						}
+					} catch (NumberFormatException e) {
+						// Oh well, we tried
+					}
+				}
+
+				labEvents.add(labEvent);
+	
+				if (labEvents.size() == batchSize) {
+					databaseService.insertLabEvents(labEvents);
+					labEvents.clear();
+				}
+			
+			} catch (CsvMalformedLineException e) {
+				// We can't recover from this, and we get in an endless loop if it happens. The file will have to be corrected at the source.
+				logger.error("Failed after " + csvReader.getRecordsRead() + " lines");
+				e.printStackTrace();
+				break;
 			} catch (Exception e) {
-				// This happens if the value has a comma in it or lab name ends with comma. Whole record is screwy, so just move on
+				// This may happen if a stray comma or quote is encountered. Whole record is screwy, so just move on
 				continue;
-			}
-
-			labEvents.add(labEvent);
-
-			if (labEvents.size() == batchSize) {
-				databaseService.insertLabEvents(labEvents);
-				labEvents.clear();
 			}
 
 		}
@@ -279,12 +338,14 @@ public class LoadDataService {
 		
 		// Do this in batches too
 		List<LabItem> labItems = new ArrayList<>();
-		for (LabItem labItem : labItemMap.values()) {
-			labItems.add(labItem);
-			
-			if (labItems.size() == batchSize) {
-				databaseService.insertLabItems(labItems);
-				labItems.clear();
+		for (Map<String, LabItem> labItem : labItemMap.values()) {
+			for (LabItem i : labItem.values()) {
+				labItems.add(i);
+				
+				if (labItems.size() == batchSize) {
+					databaseService.insertLabItems(labItems);
+					labItems.clear();
+				}
 			}
 		}
 		
@@ -390,9 +451,16 @@ public class LoadDataService {
 	 * @throws IOException
 	 */
 	private static CSVReader getReader(String path) throws IOException {
-		Reader reader = new BufferedReader(new FileReader(path));
-		CSVReader csvReader = new CSVReader(reader);
-		csvReader.skip(1);
+		final CSVParser parser =
+				new CSVParserBuilder()
+				.withSeparator('\t')
+				.withIgnoreQuotations(true)
+				.build();
+		final CSVReader csvReader =
+				new CSVReaderBuilder(new BufferedReader(new FileReader(path)))
+				.withSkipLines(1)
+				.withCSVParser(parser)
+				.build();
 		return csvReader;
 	}
 
@@ -402,6 +470,7 @@ public class LoadDataService {
 		}
 
 		List<SimpleDateFormat> dateFormats = new ArrayList<>();
+		dateFormats.add(new SimpleDateFormat("yyyy-MM-dd hh:mm:ss"));
 		dateFormats.add(new SimpleDateFormat("M/d/yyyy"));
 		dateFormats.add(new SimpleDateFormat("M/d/yyyy h:m:s a"));
 

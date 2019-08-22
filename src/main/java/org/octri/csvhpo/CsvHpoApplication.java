@@ -1,5 +1,15 @@
 package org.octri.csvhpo;
 
+import java.util.Map;
+
+import org.monarchinitiative.loinc2hpo.io.LoincAnnotationSerializationFactory;
+import org.monarchinitiative.loinc2hpo.loinc.LOINC2HpoAnnotationImpl;
+import org.monarchinitiative.loinc2hpo.loinc.LoincEntry;
+import org.monarchinitiative.loinc2hpo.loinc.LoincId;
+import org.octri.csvhpo.domain.LabSummary;
+import org.octri.csvhpo.lab2hpo.LabEvents2HpoFactory;
+import org.octri.csvhpo.service.Lab2HpoService;
+import org.octri.csvhpo.service.LabSummaryService;
 import org.octri.csvhpo.service.LoadDataService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,7 +58,13 @@ public class CsvHpoApplication implements CommandLineRunner {
 	boolean convert;
 	
 	@Autowired
-	LoadDataService loadDataService;
+	private LoadDataService loadDataService;
+
+    @Autowired
+    private LabSummaryService labSummaryService;
+    
+    @Autowired
+    private Lab2HpoService lab2HpoService;
 
 	public static void main(String[] args) {
 		SpringApplication.run(CsvHpoApplication.class, args);
@@ -78,11 +94,45 @@ public class CsvHpoApplication implements CommandLineRunner {
         if (summarizeLabs) {
         	// The labs needs to be summarized
         	logger.info("Examining labs to determine the mean normal value for each type.");
+        	labSummaryService.createLabSummaryStatistics();
         }
         
         if (convert) {
         	// The labs need to be converted
         	logger.info("Converting labs to HPO");
+    		Map<Integer, LabSummary> labSummaryMap = labSummaryService.getLabSummaryMap();
+    		
+            Map<LoincId, LOINC2HpoAnnotationImpl> annotationMap = null;
+            try {
+                annotationMap = LoincAnnotationSerializationFactory.parseFromFile("src/main/resources/annotations.tsv", null, LoincAnnotationSerializationFactory.SerializationFormat.TSVSingleFile);
+            } catch (Exception e) {
+                logger.error("loinc2hpoAnnotation failed to load");
+                e.printStackTrace();
+                System.exit(1);
+            }
+            logger.info("loinc2hpoAnnotation successfully loaded.");
+            logger.info("Total annotations: " + annotationMap.size());
+
+            //load loincCoreTable
+            Map<LoincId, LoincEntry> loincEntryMap = LoincEntry.getLoincEntryList("src/main/resources/LoincTableCore.csv");
+            if (loincEntryMap.isEmpty()) {
+                logger.error("loinc core table failed to load");
+                System.exit(1);
+            } else {
+                logger.info("loinc core table successfully loaded");
+                logger.info("loinc entries: " + loincEntryMap.size());
+            }
+
+            //start processing
+            LabEvents2HpoFactory labConvertFactory = new LabEvents2HpoFactory(
+                    labSummaryMap,
+                    annotationMap,
+                    loincEntryMap
+            );
+
+            lab2HpoService.labToHpo(labConvertFactory);
+
+
         }
         
 	}

@@ -17,6 +17,7 @@
 
 	<properties>
 		<java.version>1.8</java.version>
+	    <loinc2hpo.version>1.1.6-SNAPSHOT</loinc2hpo.version>
 	</properties>
 
 	<dependencies>
@@ -50,6 +51,11 @@
 			<artifactId>spring-boot-starter-data-jpa</artifactId>
 			<version>2.1.4.RELEASE</version>
 		</dependency>
+	    <dependency>
+	      <groupId>org.monarchinitiative</groupId>
+	      <artifactId>loinc2hpo-core</artifactId>
+	      <version>${loinc2hpo.version}</version>
+	    </dependency>
 	</dependencies>
 
 	<build>
